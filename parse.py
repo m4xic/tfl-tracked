@@ -1,18 +1,29 @@
 import os
 import csv
+import json
+import datetime
 
 journeys = []
 start_stations = {}
 end_stations = {}
+unique_stations = {}
 common_journeys = {}
 
-longest_journey = {"Journey Time": 0}
-shortest_journey = {"Journey Time": 99999}
+first_date = None
+last_date = None
 
-latest_journey = {"Mod Start Time": "00:00"}
-earliest_journey = {"Mod Start Time": "99:99"}
+longest_journey = {
+    "Error": "You didn't take any Tube journeys.", "Journey Time": 0}
+shortest_journey = {
+    "Error": "You didn't take any Tube journeys.", "Journey Time": 99999}
 
-most_expensive_journey = {"Charge": 0.0}
+latest_journey = {
+    "Error": "You didn't take any Tube journeys.", "Mod Start Time": "00:00"}
+earliest_journey = {
+    "Error": "You didn't take any Tube journeys.", "Mod Start Time": "99:99"}
+
+most_expensive_journey = {
+    "Error": "You didn't take any Tube journeys.", "Charge": 0.0}
 times_cap_hit = 0
 times_didnt_tap = 0
 
@@ -44,6 +55,15 @@ for filename in os.listdir('journey-history'):
 
                 # GENERAL HANDLING
                 total_journeys += 1
+
+                # Convert row['Date'] to a datetime object. %d-%b-%Y is the format of the date in the CSV file.
+                journey_date = datetime.datetime.strptime(
+                    row['Date'], '%d-%b-%Y')
+
+                if first_date == None or journey_date < first_date:
+                    first_date = journey_date
+                if last_date == None or journey_date > last_date:
+                    last_date = journey_date
 
                 if "We are not able to show where you touched out during this journey" in row['Note'] or "We are not able to show where you touched in during this journey" in row['Note'] or '[No touch' in row['Journey/Action']:
                     times_didnt_tap += 1
@@ -80,6 +100,8 @@ for filename in os.listdir('journey-history'):
                         ' to ')[-1].split(' [')[0].split(' DLR')[0]
                     add_to_dict(start_stations, row['Start Station'])
                     add_to_dict(end_stations, row['End Station'])
+                    add_to_dict(unique_stations, row['Start Station'])
+                    add_to_dict(unique_stations, row['End Station'])
                     add_to_dict(
                         common_journeys, f"{row['Start Station']} to {row['End Station']}")
 
@@ -134,12 +156,49 @@ print(f"{round(times_didnt_tap / total_journeys * 100, 2)}% of journeys didn't t
 print(f"{round(times_cap_hit / total_journeys * 100, 2)}% of journeys hit the cap")
 
 print(f"Methods used: {methods}")
-print(f"Favourite method: {max(methods, key=methods.get)}")
-print(
-    f"% of journeys on favourite method: {round(methods[max(methods, key=methods.get)] / total_journeys * 100, 2)}%")
+
+favourite_method = max(methods, key=methods.get)
+print(f"Favourite method: {favourite_method}")
 
 time_spent_travelling = sum(int(journey['Journey Time'])
                             for journey in journeys if "Journey Time" in journey)
 print(f"Time spent travelling: {time_spent_travelling} minutes")
+
+average_journey_time = round(time_spent_travelling / total_journeys, 1)
 print(
-    f"Average journey time: {round(time_spent_travelling / total_journeys, 2)} minutes")
+    f"Average journey time: {average_journey_time} minutes")
+
+raw_charge = sum(float(journey['Charge']) for journey in journeys)
+total_charge = '{0:.2f}'.format(
+    round(sum(float(journey['Charge']) for journey in journeys), 2))
+print(f"Total charge: £{total_charge}")
+
+average_charge = '{0:.2f}'.format(raw_charge / total_journeys)
+print(f"Average charge: £{average_charge}")
+
+export = {
+    "start_stations": len(start_stations),
+    "end_stations": len(end_stations),
+    "unique_stations": len(unique_stations),
+    "most_common_journey": {"journey": most_common_journey, "times": common_journeys[most_common_journey]},
+    "longest_journey": longest_journey,
+    "shortest_journey": shortest_journey,
+    "latest_journey": latest_journey,
+    "earliest_journey": earliest_journey,
+    "most_expensive_journey": most_expensive_journey,
+    "most_common_bus_route": {"route": most_common_bus_route, "times": bus_routes[most_common_bus_route]},
+    "times_didnt_tap": times_didnt_tap,
+    "times_cap_hit": times_cap_hit,
+    "total_journeys": total_journeys,
+    "methods_used": methods,
+    "time_spent_travelling": time_spent_travelling,
+    "average_journey_time": average_journey_time,
+    "total_charge": total_charge,
+    "average_charge": average_charge,
+    # Create a new dict with the first and last dates in the format DD MMM YYYY
+    "date_range": {"first": first_date.strftime("%d %b %Y"), "last": last_date.strftime("%d %b %Y"), "days_covered": (last_date - first_date).days + 1, "journeys_per_day": round(total_journeys / ((last_date - first_date).days + 1), 1)},
+}
+
+print(export)
+with open('export.json', 'w') as f:
+    json.dump(export, f)
